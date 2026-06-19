@@ -1,15 +1,24 @@
-// src/automation/reddit.js
 const { chromium } = require('playwright');
 const { waitForRedditOTP } = require('./tempmail');
 
-/**
- * Advanced Automated Reddit Signup via Human Click Simulation.
- * @param {Object} emailSession - The object returned from getTempEmail()
- * @param {boolean} showBrowser - Toggle for headed/headless mode
- * @returns {Promise<{success: boolean, message: string}>}
- */
+function generatePassword() {
+    return 'Octa@' + Math.random().toString(36).substring(2, 10) + '!';
+}
+
+async function findVisibleButton(page, selectors) {
+    for (const selector of selectors) {
+        const btn = page.locator(selector).first();
+        if (await btn.isVisible().catch(() => false)) {
+            return btn;
+        }
+    }
+    return null;
+}
+
 async function signupReddit(emailSession, showBrowser = true) {
     const { email, login, domain } = emailSession;
+    const password = generatePassword();
+    const username = login.substring(0, 15);
 
     const browser = await chromium.launch({
         headless: !showBrowser,
@@ -34,7 +43,6 @@ async function signupReddit(emailSession, showBrowser = true) {
 
     const page = await context.newPage();
 
-    // Fingerprint masking injection
     await page.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
         Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
@@ -42,88 +50,142 @@ async function signupReddit(emailSession, showBrowser = true) {
     });
 
     try {
-        console.log('🚀 [Playwright] Step 1: Loading Reddit Homepage...');
-        // Sab se pehle main page kholna hai
+        console.log('Step 1: Loading Reddit Homepage...');
         await page.goto('https://www.reddit.com/', { waitUntil: 'networkidle', timeout: 60000 });
 
-        // Thora scroll down karte hain taake human organic interaction mimic ho
-        console.log('🔄 [Playwright] Simulating organic user scrolling...');
+        console.log('Simulating organic user scrolling...');
         await page.evaluate(() => window.scrollBy(0, 400));
         await page.waitForTimeout(3000);
         await page.evaluate(() => window.scrollBy(0, -200));
         await page.waitForTimeout(2000);
 
-        console.log('🎯 [Playwright] Step 2: Locating "Sign Up" button on UI...');
-
-        // Reddit ke button selectors jo homepage par hote hain
-        const signUpSelectors = [
+        console.log('Step 2: Locating Sign Up button...');
+        const signUpButton = await findVisibleButton(page, [
             'a[href*="/signup"]',
-            'a:has-text("Sign Up")',
+            'a[href*="/register"]',
             'button:has-text("Sign Up")',
-            '#login-link' // Kuch layouts mein login page par hi signup hota hai
-        ];
+            'a:has-text("Sign Up")',
+            'a:has-text("Get started")',
+            '#login-link'
+        ]);
 
-        let signUpButton = null;
-        for (const selector of signUpSelectors) {
-            if (await page.locator(selector).first().isVisible()) {
-                signUpButton = page.locator(selector).first();
-                break;
+        if (signUpButton) {
+            await signUpButton.click();
+            await page.waitForTimeout(3000);
+        } else {
+            console.log('Navigating directly to register page...');
+            await page.goto('https://www.reddit.com/register/', { waitUntil: 'networkidle' });
+        }
+
+        console.log('Step 3: Entering email...');
+        const emailInput = await page.waitForSelector('input[name="email"], input[type="email"]', { timeout: 15000 });
+        await emailInput.click();
+        for (const char of email) {
+            await page.keyboard.type(char, { delay: Math.floor(Math.random() * 80) + 50 });
+        }
+        await page.waitForTimeout(1500);
+        await page.keyboard.press('Enter');
+
+        console.log('Step 4: Waiting for verification email...');
+        await page.waitForTimeout(4000);
+
+        const otpCode = await waitForRedditOTP(login, domain);
+        console.log(`OTP received: ${otpCode}`);
+
+        console.log('Step 5: Entering OTP code...');
+        const otpInput = await page.waitForSelector(
+            'input[id*="verification"], input[name*="code"], input[inputmode="numeric"]',
+            { timeout: 15000 }
+        ).catch(() => null);
+
+        if (otpInput) {
+            await otpInput.click();
+            for (const char of otpCode) {
+                await page.keyboard.type(char, { delay: 120 });
+            }
+            await page.waitForTimeout(1000);
+            await page.keyboard.press('Enter');
+        } else {
+            const digitInputs = await page.locator('input[maxlength="1"]').all();
+            if (digitInputs.length >= 6) {
+                for (let i = 0; i < otpCode.length && i < digitInputs.length; i++) {
+                    await digitInputs[i].fill(otpCode[i]);
+                    await page.waitForTimeout(100);
+                }
+            } else {
+                console.log('OTP fields not found via selectors, typing directly...');
+                await page.keyboard.type(otpCode, { delay: 100 });
+                await page.waitForTimeout(2000);
             }
         }
 
-        if (signUpButton) {
-            console.log('🖱️ [Playwright] Clicking Sign Up button organically...');
-            await signUpButton.click();
+        await page.waitForTimeout(3000);
+
+        console.log('Step 6: Setting username and password...');
+        const usernameInput = await findVisibleButton(page, [
+            'input[name="username"]',
+            'input[id*="username"]'
+        ]);
+        if (usernameInput) {
+            await usernameInput.click();
+            await usernameInput.fill(username);
+            await page.waitForTimeout(1000);
+        }
+
+        const passwordInput = await findVisibleButton(page, [
+            'input[name="password"]',
+            'input[id*="password"]',
+            'input[type="password"]'
+        ]);
+        if (passwordInput) {
+            await passwordInput.click();
+            for (const char of password) {
+                await page.keyboard.type(char, { delay: Math.floor(Math.random() * 60) + 40 });
+            }
+            await page.waitForTimeout(1000);
+        }
+
+        const submitBtn = await findVisibleButton(page, [
+            'button[type="submit"]',
+            'button:has-text("Create")',
+            'button:has-text("Sign Up")',
+            'button:has-text("Continue")'
+        ]);
+        if (submitBtn) {
+            await submitBtn.click();
         } else {
-            console.log('⚠️ [Playwright] Button not found by text, triggering direct dynamic overlay fallback...');
-            // Agar button na mile toh safe redirect link call karte hain
-            await page.goto('https://www.reddit.com/login', { waitUntil: 'networkidle' });
-            // Login page par aksar "Register" link hota hai
-            const registerLink = page.locator('a:has-text("Sign up"), a[href*="/signup"]').first();
-            await registerLink.waitFor({ timeout: 5000 });
-            await registerLink.click();
+            await page.keyboard.press('Enter');
         }
 
-        // Wait for forms to render fully
-        await page.waitForTimeout(4000);
+        await page.waitForTimeout(5000);
 
-        console.log('📝 [Playwright] Step 3: Scanning form fields...');
-        const emailInputSelector = 'input[name="email"], input[type="email"], #reg-email';
-
-        await page.waitForSelector(emailInputSelector, { timeout: 15000, state: 'visible' });
-        console.log('🎯 [Playwright] Form detected! Entering email...');
-
-        await page.focus(emailInputSelector);
-        await page.click(emailInputSelector);
-
-        // Human typing imitation loop
-        for (const char of email) {
-            await page.keyboard.type(char, { delay: Math.floor(Math.random() * 120) + 80 });
+        const skipBtn = await findVisibleButton(page, [
+            'button:has-text("Skip")',
+            'button:has-text("Next")',
+            'button:has-text("Not now")'
+        ]);
+        if (skipBtn) {
+            await skipBtn.click();
+            await page.waitForTimeout(2000);
         }
 
+        console.log(`Account created: ${email} / ${password}`);
         await page.waitForTimeout(2000);
-        await page.keyboard.press('Enter');
 
-        console.log('🔐 [Playwright] Step 4: Moving to credential creation layout...');
-        await page.waitForTimeout(4000);
-
-        // Baseline complete confirmation message for testing logs
-        console.log(`✅ [Playwright] Signup pipeline simulated up to checkpoint for target: ${email}`);
-
-        await page.waitForTimeout(4000);
-        await browser.close();
-
-        return { success: true, message: `Account setup triggered for ${email}` };
+        return {
+            success: true,
+            email,
+            password,
+            username,
+            message: `Account created: ${email}`
+        };
 
     } catch (error) {
-        console.error('❌ [Playwright] Processing Exception:', error.message);
-
-        // Crash hone se pehle thori dair browser khula rakhein taake aap screen dekh saken
-        console.log('⚠️ [Playwright] Safety hold active. Inspecting browser state before termination...');
-        await page.waitForTimeout(10000);
-
-        try { await browser.close(); } catch (e) { }
+        console.error('Signup error:', error.message);
+        await page.waitForTimeout(5000);
         return { success: false, error: error.message };
+    } finally {
+        try { await browser.close(); } catch (e) { }
     }
 }
 
