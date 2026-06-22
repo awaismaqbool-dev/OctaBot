@@ -52,11 +52,12 @@ async function loginReddit(email, password, showBrowser = true) {
 
         await page.waitForTimeout(1000);
 
-        const loginButton = await page.locator('button[type="submit"]').first();
+        const loginButton = page.getByRole('button', { name: /log in/i, exact: false });
+        await loginButton.waitFor({ state: 'visible', timeout: 10000 });
         await loginButton.click();
 
-        await page.waitForURL('https://www.reddit.com/', { timeout: 20000 });
-        await page.waitForTimeout(3000);
+        await page.waitForURL('https://www.reddit.com/', { timeout: 30000 });
+        await page.waitForTimeout(4000);
 
         console.log('[Extraction] Login successful!');
         return { success: true, browser, context, page };

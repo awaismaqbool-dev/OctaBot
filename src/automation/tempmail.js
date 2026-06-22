@@ -1,85 +1,114 @@
-// src/automation/tempmail.js
+// tempmail.js
+const MAIL_API = 'https://api.mail.tm';
 
-/**
- * Generates a random temporary email address using 1secmail API.
- * @returns {Promise<{email: string, login: string, domain: string}>}
- */
 async function getTempEmail() {
     try {
-        // Ek random string generate karte hain username ke liye
+        const domainsRes = await fetch(`${MAIL_API}/domains?page=1`);
+        const domainsData = await domainsRes.json();
+        const domain = domainsData['hydra:member'][0].domain;
+
         const randomString = Math.random().toString(36).substring(2, 10);
-
-        // Qiott.com ya kzccv.com par Reddit asani se register karne deta hai
-        const domain = 'qiott.com';
         const email = `${randomString}@${domain}`;
+        const password = 'Temp@' + Math.random().toString(36).substring(2, 8) + '!';
 
-        console.log('--- [OctaBot API] Generated Email:', email);
+        const accountRes = await fetch(`${MAIL_API}/accounts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: email, password })
+        });
+
+        if (!accountRes.ok) {
+            const errText = await accountRes.text();
+            throw new Error(`Account creation failed: ${errText}`);
+        }
+
+        const tokenRes = await fetch(`${MAIL_API}/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: email, password })
+        });
+
+        const tokenData = await tokenRes.json();
+        const token = tokenData.token;
+
+        console.log(`[TempMail] Created: ${email}`);
 
         return {
-            email: email,
+            email,
             login: randomString,
-            domain: domain
+            domain,
+            password,
+            token
         };
     } catch (error) {
-        console.error('Error generating email:', error);
+        console.error('[TempMail] Error creating email:', error.message);
         throw error;
     }
 }
 
-/**
- * Polls the 1secmail API to wait for Reddit's verification email and extracts the 6-digit OTP.
- * @param {string} login - The username part of the email
- * @param {string} domain - The domain part of the email
- * @param {number} maxAttempts - How many times to check (default 24 attempts = 2 minutes)
- * @returns {Promise<string>} The 6-digit OTP code
- */
-async function waitForRedditOTP(login, domain, maxAttempts = 24) {
-    const url = `https://www.1secmail.com/api/v1/?action=getMessages&login=${login}&domain=${domain}`;
-
-    console.log("📨 [OctaBot API] Monitoring inbox for Reddit verification email...");
+// FIXED: mail.tm API ke standards ke mutabiq OTP verification system
+async function waitForRedditOTP(token, maxAttempts = 24) {
+    // token parameter ab mandatory hai kyunki mail.tm bina auth ke inbox nahi dikhata
+    console.log("📨 [TempMail] Monitoring mail.tm inbox for Reddit verification email...");
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            const response = await fetch(url);
-            const messages = await response.json();
+            const response = await fetch(`${MAIL_API}/messages`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            const data = await response.json();
+            const messages = data['hydra:member'];
 
             if (messages && messages.length > 0) {
-                // Check karte hain agar Reddit se koi email aayi hai
-                const redditMail = messages.find(msg =>
-                    msg.from.toLowerCase().includes('reddit') ||
-                    msg.subject.toLowerCase().includes('verify')
+                // Reddit se aayi hui email search karein
+                const redditMail = messages.find(msg => 
+                    msg.from.address.toLowerCase().includes('reddit') || 
+                    msg.subject.toLowerCase().includes('verify') ||
+                    msg.subject.toLowerCase().includes('code')
                 );
 
                 if (redditMail) {
-                    console.log(`✨ [OctaBot API] Reddit Email Detected! Fetching Content...`);
+                    console.log(`[TempMail] Reddit email found: "${redditMail.subject}"`);
 
+                    const subjectMatch = redditMail.subject?.match(/\b(\d{6})\b/);
+                    if (subjectMatch && subjectMatch[1] !== '000000') {
+                        console.log(`[TempMail] Extracted OTP from subject: ${subjectMatch[1]}`);
+                        return subjectMatch[1];
+                    }
+
+                    console.log(`[TempMail] Fetching full message body...`);
                     const messageId = redditMail.id;
-                    const contentUrl = `https://www.1secmail.com/api/v1/?action=readMessage&login=${login}&domain=${domain}&id=${messageId}`;
+                    const detailRes = await fetch(`${MAIL_API}/messages/${messageId}`, {
+                        method: 'GET',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
 
-                    const contentResponse = await fetch(contentUrl);
-                    const mailData = await contentResponse.json();
-                    const mailBody = mailData.body; // Full HTML/Text content
+                    const mailData = await detailRes.json();
+                    const mailText = mailData.text || '';
+                    const mailHtml = mailData.html || '';
+                    const combinedBody = mailText + ' ' + mailHtml;
 
-                    // Regex use kar ke 6 digits ka numeric OTP code nikalte hain
-                    const otpMatch = mailBody.match(/\b\d{6}\b/);
+                    const allCodes = combinedBody.match(/\b(\d{6})\b/g) || [];
+                    const validCode = allCodes.find(c => c !== '000000');
 
-                    if (otpMatch) {
-                        const otpCode = otpMatch[0];
-                        console.log(`🔥 [OctaBot API] Extracted Reddit OTP: ${otpCode}`);
-                        return otpCode;
+                    if (validCode) {
+                        console.log(`[TempMail] Extracted OTP: ${validCode}`);
+                        return validCode;
                     }
                 }
             }
         } catch (error) {
-            console.error(`❌ Attempt ${attempt} failed:`, error.message);
+            console.error(`[TempMail] Monitoring attempt ${attempt} warning:`, error.message);
         }
 
-        // 5 second ka wait agli baar check karne se pehle
+        // 5 seconds delay before next operational sequence
         await new Promise(resolve => setTimeout(resolve, 5000));
-        console.log(`⏱️ Inbox check attempt ${attempt}/${maxAttempts}...`);
+        console.log(`⏱️ Inbox check sync state: ${attempt}/${maxAttempts}...`);
     }
 
-    throw new Error("⏳ Timeout: Reddit verification email not received.");
+    throw new Error('Timeout: Reddit validation token not received inside mail.tm repository.');
 }
 
 module.exports = { getTempEmail, waitForRedditOTP };

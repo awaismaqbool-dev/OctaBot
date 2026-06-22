@@ -89,7 +89,7 @@ async function signupReddit(emailSession, showBrowser = true) {
         console.log('Step 4: Waiting for verification email...');
         await page.waitForTimeout(4000);
 
-        const otpCode = await waitForRedditOTP(login, domain);
+        const otpCode = await waitForRedditOTP(emailSession.token);
         console.log(`OTP received: ${otpCode}`);
 
         console.log('Step 5: Entering OTP code...');
