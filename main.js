@@ -39,13 +39,14 @@ ipcMain.handle('ping', async () => {
 // Main Automation Bridge Handler
 ipcMain.handle('start-full-automation', async (event, args) => {
   const showBrowser = args?.showBrowser ?? true;
+  const proxyConfig = args?.proxy || null;
 
   try {
     console.log("[Main] Step 1: Email Generation...");
     const emailSession = await getTempEmail();
 
     console.log("[Main] Step 2: Reddit Signup Automation...");
-    const result = await signupReddit(emailSession, showBrowser);
+    const result = await signupReddit(emailSession, showBrowser, 0, proxyConfig);
 
     if (result.success) {
       savedCredentials = {
@@ -75,6 +76,7 @@ ipcMain.handle('start-extraction', async (event, args) => {
   }
 
   const showBrowser = args?.showBrowser ?? true;
+  const proxyConfig = args?.proxy || null;
 
   try {
     console.log("[Main] Starting data extraction...");
@@ -83,7 +85,8 @@ ipcMain.handle('start-extraction', async (event, args) => {
     const loginResult = await loginReddit(
       savedCredentials.email,
       savedCredentials.password,
-      showBrowser
+      showBrowser,
+      proxyConfig
     );
 
     if (!loginResult.success) {

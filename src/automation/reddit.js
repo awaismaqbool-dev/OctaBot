@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const { waitForRedditOTP } = require('./tempmail');
+const { waitForRedditOTP, getTempEmail } = require('./tempmail');
 
 function generatePassword() {
     return 'Octa@' + Math.random().toString(36).substring(2, 10) + '!';
@@ -15,38 +15,67 @@ async function findVisibleButton(page, selectors) {
     return null;
 }
 
-async function signupReddit(emailSession, showBrowser = true) {
-    const { email, login, domain } = emailSession;
-    const password = generatePassword();
-    const username = login.substring(0, 15);
+async function launchBrowser(showBrowser, proxyConfig = null) {
+    const launchArgs = [
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-infobars',
+        '--window-position=0,0',
+        '--ignore-certificate-errors',
+        '--disable-extensions',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-web-security',
+        '--disable-features=BlockInsecurePrivateNetworkRequests'
+    ];
 
-    const browser = await chromium.launch({
+    const opts = {
         headless: !showBrowser,
-        args: [
-            '--disable-blink-features=AutomationControlled',
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-infobars',
-            '--window-position=0,0',
-            '--ignore-certificate-errors',
-            '--disable-extensions'
-        ]
-    });
+        args: launchArgs
+    };
 
+    if (proxyConfig) {
+        opts.proxy = { server: proxyConfig.server };
+        if (proxyConfig.username) {
+            opts.proxy.username = proxyConfig.username;
+            opts.proxy.password = proxyConfig.password;
+        }
+    }
+
+    return await chromium.launch(opts);
+}
+
+async function createContext(browser) {
     const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         viewport: { width: 1366, height: 768 },
         locale: 'en-US',
         languages: ['en-US', 'en'],
-        timezoneId: 'Asia/Karachi'
+        timezoneId: 'Asia/Karachi',
+        permissions: ['geolocation'],
+        deviceScaleFactor: 1,
+        hasTouch: false,
+        isMobile: false
     });
 
+    return context;
+}
+
+async function signupReddit(emailSession, showBrowser = true, retryCount = 0, proxyConfig = null) {
+    const { email, login } = emailSession;
+    const password = generatePassword();
+    const username = login.substring(0, 15);
+
+    const browser = await launchBrowser(showBrowser, proxyConfig);
+    const context = await createContext(browser);
     const page = await context.newPage();
 
     await page.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
         Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
         Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
     });
 
     try {
@@ -89,8 +118,19 @@ async function signupReddit(emailSession, showBrowser = true) {
         console.log('Step 4: Waiting for verification email...');
         await page.waitForTimeout(4000);
 
-        const otpCode = await waitForRedditOTP(emailSession.token);
-        console.log(`OTP received: ${otpCode}`);
+        let otpCode;
+        try {
+            otpCode = await waitForRedditOTP(emailSession);
+            console.log(`OTP received: ${otpCode}`);
+        } catch (otpError) {
+            if (otpError.message.includes('OTP_TIMEOUT') && retryCount < 2) {
+                console.log(`[Retry ${retryCount + 1}] Domain blocked, creating new email with different API...`);
+                await browser.close();
+                const newSession = await getTempEmail();
+                return signupReddit(newSession, showBrowser, retryCount + 1, proxyConfig);
+            }
+            throw otpError;
+        }
 
         console.log('Step 5: Entering OTP code...');
         const otpInput = await page.waitForSelector(
@@ -119,7 +159,7 @@ async function signupReddit(emailSession, showBrowser = true) {
             }
         }
 
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(4000);
 
         console.log('Step 6: Setting username and password...');
         const usernameInput = await findVisibleButton(page, [
@@ -129,7 +169,7 @@ async function signupReddit(emailSession, showBrowser = true) {
         if (usernameInput) {
             await usernameInput.click();
             await usernameInput.fill(username);
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(1500);
         }
 
         const passwordInput = await findVisibleButton(page, [
@@ -182,7 +222,7 @@ async function signupReddit(emailSession, showBrowser = true) {
 
     } catch (error) {
         console.error('Signup error:', error.message);
-        await page.waitForTimeout(5000);
+        await page.waitForTimeout(3000);
         return { success: false, error: error.message };
     } finally {
         try { await browser.close(); } catch (e) { }
