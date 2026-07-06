@@ -1,16 +1,56 @@
-// main.js
-const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
-const isDev = require('electron-is-dev');
+const { app, BrowserWindow, ipcMain } = require("electron");
+const path = require("path");
+const fs = require("fs");
+const isDev = require("electron-is-dev");
 
-// Dono automation files ko import kar rahe hain
-const { getTempEmail } = require('./src/automation/tempmail');
-const { signupReddit } = require('./src/automation/reddit');
-const { loginReddit, extractRedditData, saveToDesktop } = require('./src/automation/extraction');
+// Import automation modules
+const { getTempEmail } = require("./src/automation/tempmail");
+const { signupAutomationExercise } = require("./src/automation/signup");
+const {
+  loginAutomationExercise,
+  extractProductData,
+  saveToDesktop,
+} = require("./src/automation/extraction");
 
 let savedCredentials = null;
-
 let activeSession = null;
+
+// Real-time History path setup
+const historyFilePath = path.join(
+  app.getPath("userData"),
+  "automation_history.json",
+);
+const configFilePath = path.join(app.getPath("userData"), "system_config.json");
+
+// Helper function to read history from local file
+function getHistory() {
+  try {
+    if (fs.existsSync(historyFilePath)) {
+      return JSON.parse(fs.readFileSync(historyFilePath, "utf8"));
+    }
+  } catch (e) {
+    console.error("History read error:", e);
+  }
+  return [];
+}
+
+// Helper function to save history entry
+function addHistoryEntry(target, status, detail) {
+  try {
+    const history = getHistory();
+    const newEntry = {
+      id: Date.now(),
+      time: new Date().toLocaleString(),
+      target,
+      status,
+      detail,
+    };
+    history.unshift(newEntry); // Newest on top
+    fs.writeFileSync(historyFilePath, JSON.stringify(history, null, 2), "utf8");
+  } catch (e) {
+    console.error("History save error:", e);
+  }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -24,105 +64,208 @@ function createWindow() {
 
   win.loadURL(
     isDev
-      ? 'http://localhost:5173'
-      : `file://${path.join(__dirname, '../dist/index.html')}`
+      ? "http://localhost:5173"
+      : `file://${path.join(__dirname, "dist/index.html")}`,
   );
 }
 
+// App lifecycle listeners
 app.whenReady().then(createWindow);
 
-// Test handler
-ipcMain.handle('ping', async () => {
-  return 'pong';
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
 });
 
-// Main Automation Bridge Handler
-ipcMain.handle('start-full-automation', async (event, args) => {
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+
+// --- IPC HANDLERS ---
+
+// 1. Full Automation Handler Update
+ipcMain.handle("start-full-automation", async (event, args) => {
   const showBrowser = args?.showBrowser ?? true;
   const proxyConfig = args?.proxy || null;
 
   try {
-    console.log("[Main] Step 1: Email Generation...");
+    console.log("[Main] Step 1: Automated Temp Mail Allocation...");
     const emailSession = await getTempEmail();
 
-    console.log("[Main] Step 2: Reddit Signup Automation...");
-    const result = await signupReddit(emailSession, showBrowser, 0, proxyConfig);
+    console.log("[Main] Step 2: Form Sign-up Automation Running...");
+    const result = await signupAutomationExercise(
+      emailSession,
+      showBrowser,
+      0,
+      proxyConfig,
+    );
 
     if (result.success) {
-      savedCredentials = {
-        email: result.email,
-        password: result.password
-      };
-      console.log(`[Main] Credentials saved in memory: ${result.email}`);
+      savedCredentials = { email: result.email, password: result.password };
+      // Real-time Success Log entry
+      addHistoryEntry(
+        "Automation Exercise Signup",
+        "success",
+        "Profile registered successfully",
+      );
+    } else {
+      // Real-time Failure Log entry if script responds with false
+      addHistoryEntry(
+        "Automation Exercise Signup",
+        "fail",
+        result.error || "Form submission failed",
+      );
     }
-
     return result;
   } catch (err) {
-    console.error("[Main] Handler Error:", err.message);
+    // Real-time Crash/Fail Log entry
+    addHistoryEntry("Automation Exercise Signup", "fail", err.message);
     return { success: false, error: err.message };
   }
 });
 
-ipcMain.handle('get-credentials-status', async () => {
-  return {
-    hasCredentials: savedCredentials !== null,
-    email: savedCredentials?.email || null
-  };
-});
-
-ipcMain.handle('start-extraction', async (event, args) => {
+// 2. Data Extraction Handler Update
+ipcMain.handle("start-extraction", async (event, args) => {
   if (!savedCredentials) {
-    return { success: false, error: 'No saved credentials. Run signup automation first.' };
+    return { success: false, error: "No temporary profile active in memory." };
   }
 
   const showBrowser = args?.showBrowser ?? true;
   const proxyConfig = args?.proxy || null;
 
   try {
-    console.log("[Main] Starting data extraction...");
-    console.log(`[Main] Logging in with: ${savedCredentials.email}`);
-
-    const loginResult = await loginReddit(
+    const loginResult = await loginAutomationExercise(
       savedCredentials.email,
       savedCredentials.password,
       showBrowser,
-      proxyConfig
+      proxyConfig,
     );
 
     if (!loginResult.success) {
+      addHistoryEntry(
+        "Product Extraction Engine",
+        "fail",
+        loginResult.error || "Login Failed",
+      );
       return loginResult;
     }
-
     activeSession = loginResult;
 
-    console.log("[Main] Extracting data from Reddit...");
-    const data = await extractRedditData(loginResult.page);
-
+    const data = await extractProductData(loginResult.page);
     const filePath = saveToDesktop(data);
 
-    console.log(`[Main] Extraction complete. ${data.length} posts -> ${filePath}`);
+    // Real-time Success Log entry
+    addHistoryEntry(
+      "Product Extraction Engine",
+      "success",
+      `${data.length} products saved to Desktop`,
+    );
 
-    return {
-      success: true,
-      dataCount: data.length,
-      filePath,
-      data
-    };
+    return { success: true, dataCount: data.length, filePath, data };
   } catch (err) {
-    console.error("[Main] Extraction error:", err.message);
+    // Real-time Failure Log entry
+    addHistoryEntry("Product Extraction Engine", "fail", err.message);
     return { success: false, error: err.message };
   }
 });
 
-ipcMain.handle('close-session', async () => {
+// 3. React tab ko live history data bhejne ke liye
+ipcMain.handle("get-automation-history", async () => {
+  return getHistory();
+});
+
+// 4. Saved credentials status query karne ke liye
+ipcMain.handle("get-credentials-status", async () => {
+  return {
+    hasCredentials: savedCredentials !== null,
+    email: savedCredentials?.email || null,
+  };
+});
+
+// 5. Active browser session close karne ke liye
+ipcMain.handle("close-session", async () => {
   if (activeSession) {
     try {
       await activeSession.browser.close();
       activeSession = null;
-      return { success: true, message: 'Session closed' };
+      return { success: true, message: "Session closed" };
     } catch (err) {
       return { success: false, error: err.message };
     }
   }
-  return { success: true, message: 'No active session' };
+  return { success: true, message: "No active session" };
+});
+// Helper to read configuration
+function getSettings() {
+  try {
+    if (fs.existsSync(configFilePath)) {
+      return JSON.parse(fs.readFileSync(configFilePath, "utf8"));
+    }
+  } catch (e) {}
+  return { speed: "normal", domain: "web-library.net", outputFormat: ".txt" }; // Default values
+}
+
+// --- IPC HANDLERS FOR SETTINGS ---
+ipcMain.handle("get-settings", async () => {
+  return getSettings();
+});
+
+ipcMain.handle("save-settings", async (event, newConfig) => {
+  try {
+    fs.writeFileSync(
+      configFilePath,
+      JSON.stringify(newConfig, null, 2),
+      "utf8",
+    );
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// --- UPDATE EXISTING START-EXTRACTION HANDLER ---
+// Apne purane 'start-extraction' handler ke andar jahan data save hota hai, wahan yeh change karen:
+ipcMain.handle("start-extraction", async (event, args) => {
+  if (!savedCredentials) {
+    return { success: false, error: "No temporary profile active in memory." };
+  }
+  const showBrowser = args?.showBrowser ?? true;
+  const proxyConfig = args?.proxy || null;
+
+  try {
+    const loginResult = await loginAutomationExercise(
+      savedCredentials.email,
+      savedCredentials.password,
+      showBrowser,
+      proxyConfig,
+    );
+    if (!loginResult.success) {
+      addHistoryEntry(
+        "Product Extraction Engine",
+        "fail",
+        loginResult.error || "Login Failed",
+      );
+      return loginResult;
+    }
+    activeSession = loginResult;
+
+    const data = await extractProductData(loginResult.page);
+
+    // YAHAN BADLAO HAI: Local settings se format uthayen aur saveToDesktop ko pass karen
+    const currentConfig = getSettings();
+    const filePath = saveToDesktop(data, currentConfig.outputFormat);
+
+    addHistoryEntry(
+      "Product Extraction Engine",
+      "success",
+      `${data.length} products saved to Desktop`,
+    );
+    return { success: true, dataCount: data.length, filePath, data };
+  } catch (err) {
+    addHistoryEntry("Product Extraction Engine", "fail", err.message);
+    return { success: false, error: err.message };
+  }
 });

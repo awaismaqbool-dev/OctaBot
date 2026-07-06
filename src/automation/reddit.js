@@ -61,6 +61,44 @@ async function createContext(browser) {
     return context;
 }
 
+async function checkForRedditError(page) {
+    try {
+        await page.waitForTimeout(5000);
+
+        const errorSelectors = [
+            'text=Something went wrong',
+            'text=That didn\'t work',
+            'text=This email is not allowed',
+            'text=invalid email',
+            'text=Please try again later',
+            '[data-testid="toast"]',
+            '[role="alert"]'
+        ];
+
+        for (const selector of errorSelectors) {
+            if (await page.locator(selector).first().isVisible().catch(() => false)) {
+                const errorText = await page.locator(selector).first().textContent().catch(() => '');
+                console.log(`[Error] Reddit email error detected: "${errorText.trim()}"`);
+                return true;
+            }
+        }
+
+        const pageContent = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+        const errorPhrases = ['something went wrong', 'that didn\'t work', 'this email is not allowed', 'invalid email'];
+        for (const phrase of errorPhrases) {
+            if (pageContent.toLowerCase().includes(phrase)) {
+                console.log(`[Error] Reddit rejected the email (found: "${phrase}")`);
+                return true;
+            }
+        }
+
+        return false;
+    } catch (e) {
+        console.log(`[Error] Detection check warning: ${e.message}`);
+        return false;
+    }
+}
+
 async function signupReddit(emailSession, showBrowser = true, retryCount = 0, proxyConfig = null) {
     const { email, login } = emailSession;
     const password = generatePassword();
@@ -115,16 +153,26 @@ async function signupReddit(emailSession, showBrowser = true, retryCount = 0, pr
         await page.waitForTimeout(1500);
         await page.keyboard.press('Enter');
 
-        console.log('Step 4: Waiting for verification email...');
-        await page.waitForTimeout(4000);
+        console.log('Step 4: Checking for Reddit errors / waiting for OTP...');
+
+        const errorDetected = await checkForRedditError(page);
+        if (errorDetected) {
+            if (retryCount < 3) {
+                console.log(`[Retry ${retryCount + 1}] Reddit blocked email domain, trying new service...`);
+                await browser.close();
+                const newSession = await getTempEmail();
+                return signupReddit(newSession, showBrowser, retryCount + 1, proxyConfig);
+            }
+            throw new Error('Reddit blocked all email domains after 3 retries.');
+        }
 
         let otpCode;
         try {
             otpCode = await waitForRedditOTP(emailSession);
             console.log(`OTP received: ${otpCode}`);
         } catch (otpError) {
-            if (otpError.message.includes('OTP_TIMEOUT') && retryCount < 2) {
-                console.log(`[Retry ${retryCount + 1}] Domain blocked, creating new email with different API...`);
+            if (otpError.message.includes('OTP_TIMEOUT') && retryCount < 3) {
+                console.log(`[Retry ${retryCount + 1}] OTP timeout, creating new email with different service...`);
                 await browser.close();
                 const newSession = await getTempEmail();
                 return signupReddit(newSession, showBrowser, retryCount + 1, proxyConfig);
