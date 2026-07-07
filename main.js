@@ -22,6 +22,18 @@ const historyFilePath = path.join(
 );
 const configFilePath = path.join(app.getPath("userData"), "system_config.json");
 
+// Helper function to clear history file (making it session-only)
+function clearHistory() {
+  try {
+    fs.writeFileSync(historyFilePath, JSON.stringify([], null, 2), "utf8");
+  } catch (e) {
+    console.error("History clear error:", e);
+  }
+}
+
+// Clear history on startup for a fresh session
+clearHistory();
+
 // Helper function to read history from local file
 function getHistory() {
   try {
@@ -78,6 +90,11 @@ app.on("window-all-closed", () => {
   }
 });
 
+app.on("will-quit", () => {
+  // Clear history on app exit
+  clearHistory();
+});
+
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
@@ -95,12 +112,14 @@ ipcMain.handle("start-full-automation", async (event, args) => {
     console.log("[Main] Step 1: Automated Temp Mail Allocation...");
     const emailSession = await getTempEmail();
 
-    console.log("[Main] Step 2: Form Sign-up Automation Running...");
+    const currentConfig = getSettings();
+    console.log(`[Main] Step 2: Form Sign-up Automation Running (Speed: ${currentConfig.speed})...`);
     const result = await signupAutomationExercise(
       emailSession,
       showBrowser,
       0,
       proxyConfig,
+      currentConfig.speed,
     );
 
     if (result.success) {
@@ -132,18 +151,19 @@ ipcMain.handle("start-extraction", async (event, args) => {
   if (!savedCredentials) {
     return { success: false, error: "No temporary profile active in memory." };
   }
-
   const showBrowser = args?.showBrowser ?? true;
   const proxyConfig = args?.proxy || null;
 
+  let loginResult = null;
   try {
-    const loginResult = await loginAutomationExercise(
+    const currentConfig = getSettings();
+    loginResult = await loginAutomationExercise(
       savedCredentials.email,
       savedCredentials.password,
       showBrowser,
       proxyConfig,
+      currentConfig.speed,
     );
-
     if (!loginResult.success) {
       addHistoryEntry(
         "Product Extraction Engine",
@@ -154,21 +174,29 @@ ipcMain.handle("start-extraction", async (event, args) => {
     }
     activeSession = loginResult;
 
-    const data = await extractProductData(loginResult.page);
-    const filePath = saveToDesktop(data);
+    const data = await extractProductData(loginResult.page, currentConfig.speed);
 
-    // Real-time Success Log entry
+    // Save with the configured output format
+    const filePath = saveToDesktop(data, currentConfig.outputFormat);
+
     addHistoryEntry(
       "Product Extraction Engine",
       "success",
       `${data.length} products saved to Desktop`,
     );
-
     return { success: true, dataCount: data.length, filePath, data };
   } catch (err) {
-    // Real-time Failure Log entry
     addHistoryEntry("Product Extraction Engine", "fail", err.message);
     return { success: false, error: err.message };
+  } finally {
+    if (loginResult && loginResult.browser) {
+      try {
+        await loginResult.browser.close();
+      } catch (e) {
+        console.error("Failed to close browser after extraction:", e);
+      }
+      activeSession = null;
+    }
   }
 });
 
@@ -198,6 +226,14 @@ ipcMain.handle("close-session", async () => {
   }
   return { success: true, message: "No active session" };
 });
+
+// 6. Saved credentials clear karne ke liye
+ipcMain.handle("clear-credentials", async () => {
+  savedCredentials = null;
+  activeSession = null;
+  return { success: true };
+});
+
 // Helper to read configuration
 function getSettings() {
   try {
@@ -226,46 +262,3 @@ ipcMain.handle("save-settings", async (event, newConfig) => {
   }
 });
 
-// --- UPDATE EXISTING START-EXTRACTION HANDLER ---
-// Apne purane 'start-extraction' handler ke andar jahan data save hota hai, wahan yeh change karen:
-ipcMain.handle("start-extraction", async (event, args) => {
-  if (!savedCredentials) {
-    return { success: false, error: "No temporary profile active in memory." };
-  }
-  const showBrowser = args?.showBrowser ?? true;
-  const proxyConfig = args?.proxy || null;
-
-  try {
-    const loginResult = await loginAutomationExercise(
-      savedCredentials.email,
-      savedCredentials.password,
-      showBrowser,
-      proxyConfig,
-    );
-    if (!loginResult.success) {
-      addHistoryEntry(
-        "Product Extraction Engine",
-        "fail",
-        loginResult.error || "Login Failed",
-      );
-      return loginResult;
-    }
-    activeSession = loginResult;
-
-    const data = await extractProductData(loginResult.page);
-
-    // YAHAN BADLAO HAI: Local settings se format uthayen aur saveToDesktop ko pass karen
-    const currentConfig = getSettings();
-    const filePath = saveToDesktop(data, currentConfig.outputFormat);
-
-    addHistoryEntry(
-      "Product Extraction Engine",
-      "success",
-      `${data.length} products saved to Desktop`,
-    );
-    return { success: true, dataCount: data.length, filePath, data };
-  } catch (err) {
-    addHistoryEntry("Product Extraction Engine", "fail", err.message);
-    return { success: false, error: err.message };
-  }
-});

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function Dashboard() {
   const { ipcRenderer } = window.require("electron");
@@ -21,6 +21,21 @@ function Dashboard() {
       setCredentialEmail(status.email);
     } catch (e) {}
   };
+
+  const handleResetCredentials = async () => {
+    try {
+      await ipcRenderer.invoke("clear-credentials");
+      setHasCredentials(false);
+      setCredentialEmail(null);
+      addLog("[System] Active session & credentials cleared.");
+    } catch (e) {
+      addLog(`[Error] Failed to clear session: ${e.message}`);
+    }
+  };
+
+  useEffect(() => {
+    checkCredentialsStatus();
+  }, []);
 
   const handleRunAutomation = async () => {
     setLoading(true);
@@ -93,10 +108,10 @@ function Dashboard() {
             </span>
           </div>
           <button
-            onClick={checkCredentialsStatus}
+            onClick={handleResetCredentials}
             className="text-xs text-[#974E3F] font-bold cursor-pointer px-7 py-2 border border-[#974E3F] rounded-xl hover:bg-[#974E3F] hover:text-white transition-all"
           >
-            Refresh
+            Reset
           </button>
         </div>
 

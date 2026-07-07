@@ -8,6 +8,7 @@ async function loginAutomationExercise(
   password,
   showBrowser = true,
   proxyConfig = null,
+  speed = "normal",
 ) {
   const launchArgs = [
     "--disable-blink-features=AutomationControlled",
@@ -32,6 +33,14 @@ async function loginAutomationExercise(
   });
 
   const page = await context.newPage();
+
+  // Helper for dynamic settings-based delays
+  const delayAction = async (ms) => {
+    const multipliers = { slow: 2.0, normal: 1.0, fast: 0.5 };
+    const multiplier = multipliers[speed] || 1.0;
+    await page.waitForTimeout(ms * multiplier);
+  };
+
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
   });
@@ -42,15 +51,19 @@ async function loginAutomationExercise(
       waitUntil: "load",
       timeout: 60000,
     });
+    await delayAction(2000);
 
     await page.waitForSelector('input[data-qa="login-email"]', {
       timeout: 15000,
     });
     await page.fill('input[data-qa="login-email"]', email);
+    await delayAction(200);
     await page.fill('input[data-qa="login-password"]', password);
+    await delayAction(300);
     await page.click('button[data-qa="login-button"]');
 
     await page.waitForSelector('a[href="/logout"]', { timeout: 15000 });
+    await delayAction(1000);
     console.log("[Extraction] Login successful!");
     return { success: true, browser, context, page };
   } catch (error) {
@@ -62,18 +75,25 @@ async function loginAutomationExercise(
   }
 }
 
-async function extractProductData(page) {
+async function extractProductData(page, speed = "normal") {
+  const delayAction = async (ms) => {
+    const multipliers = { slow: 2.0, normal: 1.0, fast: 0.5 };
+    const multiplier = multipliers[speed] || 1.0;
+    await page.waitForTimeout(ms * multiplier);
+  };
+
   console.log("[Extraction] Navigating to Products page directory...");
   await page.goto("https://automationexercise.com/products", {
     waitUntil: "load",
     timeout: 60000,
   });
-  await page.waitForTimeout(2000);
+  await delayAction(2000);
 
   for (let i = 0; i < 3; i++) {
     await page.evaluate(() => window.scrollBy(0, 400));
-    await page.waitForTimeout(500);
+    await delayAction(500);
   }
+
 
   console.log("[Extraction] Parsing structured data from elements DOM...");
   const products = await page.evaluate(() => {

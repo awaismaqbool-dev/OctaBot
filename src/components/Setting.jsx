@@ -84,7 +84,7 @@ function Settings() {
         </div>
 
         {/* Email Service Domains */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-5 border-b border-[#e8d5bc]">
+        {/* <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-5 border-b border-[#e8d5bc]">
           <div className="max-w-xl">
             <p className="font-bold text-amber-950">
               Temporary Mail Gateway Mapping
@@ -106,7 +106,7 @@ function Settings() {
               </option>
             ))}
           </select>
-        </div>
+        </div> */}
 
         {/* Output Extensions */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4">

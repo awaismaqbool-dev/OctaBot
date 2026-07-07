@@ -74,17 +74,7 @@ function History() {
                 >
                   {run.status}
                 </span>
-                <button
-                  disabled={run.status === "fail"}
-                  className={`text-xs px-4 py-2 rounded-lg border font-bold tracking-wide transition-all
-                                    ${
-                                      run.status === "success"
-                                        ? "border-[#974E3F] text-[#974E3F] bg-white/40 hover:bg-[#974E3F] hover:text-white cursor-pointer shadow-sm"
-                                        : "border-amber-800/20 text-amber-900/40 bg-transparent cursor-not-allowed"
-                                    }`}
-                >
-                  INSPECT
-                </button>
+
               </div>
             </div>
           ))}

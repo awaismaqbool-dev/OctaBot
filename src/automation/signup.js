@@ -9,6 +9,7 @@ async function signupAutomationExercise(
   showBrowser = true,
   retryCount = 0,
   proxyConfig = null,
+  speed = "normal",
 ) {
   const { email, login } = emailSession;
   const password = generatePassword();
@@ -45,6 +46,13 @@ async function signupAutomationExercise(
 
   const page = await context.newPage();
 
+  // Helper for dynamic settings-based delays
+  const delayAction = async (ms) => {
+    const multipliers = { slow: 2.0, normal: 1.0, fast: 0.5 };
+    const multiplier = multipliers[speed] || 1.0;
+    await page.waitForTimeout(ms * multiplier);
+  };
+
   // Webdriver fingerprint ko hide karne ke liye script injection
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
@@ -64,29 +72,37 @@ async function signupAutomationExercise(
       waitUntil: "load",
       timeout: 60000,
     });
-    await page.waitForTimeout(2000);
+    await delayAction(2000);
 
     console.log("Step 2: Submitting Initial Name and Temporary Email...");
     await page.waitForSelector('input[data-qa="signup-name"]', {
       timeout: 15000,
     });
     await page.fill('input[data-qa="signup-name"]', username);
+    await delayAction(200);
     await page.fill('input[data-qa="signup-email"]', email);
+    await delayAction(300);
     await page.click('button[data-qa="signup-button"]');
 
     console.log("Step 3: Waiting for Detailed Profile Form...");
     await page.waitForSelector("#id_gender1", { timeout: 15000 });
+    await delayAction(500);
 
     // Radio button Title
     await page.click("#id_gender1");
+    await delayAction(200);
 
     // Password
     await page.fill('input[data-qa="password"]', password);
+    await delayAction(300);
 
     // Date of Birth Dropdowns
     await page.selectOption('select[data-qa="days"]', "15");
+    await delayAction(100);
     await page.selectOption('select[data-qa="months"]', "5");
+    await delayAction(100);
     await page.selectOption('select[data-qa="years"]', "1995");
+    await delayAction(300);
 
     // Address Details Form
     await page.fill('input[data-qa="first_name"]', "Awais");
@@ -97,6 +113,7 @@ async function signupAutomationExercise(
     await page.fill('input[data-qa="city"]', "Faisalabad");
     await page.fill('input[data-qa="zipcode"]', "38000");
     await page.fill('input[data-qa="mobile_number"]', "03001234567");
+    await delayAction(500);
 
     console.log("Step 4: Submitting Complete Form to Create Account...");
     await page.click('button[data-qa="create-account"]');
@@ -104,6 +121,7 @@ async function signupAutomationExercise(
     await page.waitForSelector('b:has-text("Account Created!")', {
       timeout: 15000,
     });
+    await delayAction(1000);
     console.log(
       `Account Created Successfully on Platform: ${email} / ${password}`,
     );
@@ -124,5 +142,4 @@ async function signupAutomationExercise(
     } catch (e) {}
   }
 }
-
 module.exports = { signupAutomationExercise };
