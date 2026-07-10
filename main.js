@@ -68,6 +68,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: path.join(__dirname, "public/fav_icon.png"),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false, // React frontend ke sath data transfer asani se karne ke liye
@@ -113,7 +114,9 @@ ipcMain.handle("start-full-automation", async (event, args) => {
     const emailSession = await getTempEmail();
 
     const currentConfig = getSettings();
-    console.log(`[Main] Step 2: Form Sign-up Automation Running (Speed: ${currentConfig.speed})...`);
+    console.log(
+      `[Main] Step 2: Form Sign-up Automation Running (Speed: ${currentConfig.speed})...`,
+    );
     const result = await signupAutomationExercise(
       emailSession,
       showBrowser,
@@ -174,7 +177,10 @@ ipcMain.handle("start-extraction", async (event, args) => {
     }
     activeSession = loginResult;
 
-    const data = await extractProductData(loginResult.page, currentConfig.speed);
+    const data = await extractProductData(
+      loginResult.page,
+      currentConfig.speed,
+    );
 
     // Save with the configured output format
     const filePath = saveToDesktop(data, currentConfig.outputFormat);
@@ -261,4 +267,3 @@ ipcMain.handle("save-settings", async (event, newConfig) => {
     return { success: false, error: e.message };
   }
 });
-

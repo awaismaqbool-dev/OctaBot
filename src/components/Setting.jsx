@@ -47,7 +47,7 @@ function Settings() {
     <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full">
       {/* Header */}
       <div className="border-b border-[#e8d5bc] pb-4">
-        <h2 className="text-3xl font-extrabold text-[#974E3F]">
+        <h2 className="text-3xl font-unbounded text-[#974E3F]">
           System Preferences
         </h2>
         <p className="text-sm text-amber-700 mt-1">
