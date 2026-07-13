@@ -1,15 +1,20 @@
 {
   "name": "octabot",
+  "version": "1.0.0",
+  "description": "OctaBot - Web Automation Tool for Automation Exercise",
   "main": "main.js",
-  "author": "Raiyan Rahman Firoz",
+  "author": "Awais Maqbool",
   "scripts": {
     "dev": "vite",
     "electron-dev": "electron .",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dist": "npm run build && electron-builder --win --x64"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
+    "electron-is-dev": "^3.0.1",
+    "playwright-core": "^1.61.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "tailwindcss": "^4.2.4"
@@ -22,11 +27,28 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^41.5.0",
-    "electron-is-dev": "^3.0.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
     "vite": "^8.0.10"
+  },
+  "build": {
+    "appId": "com.octabot.app",
+    "productName": "OctaBot",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "src/automation/**/*",
+      "main.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "asInvoker"
+    }
   }
 }

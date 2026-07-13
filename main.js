@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const isDev = require("electron-is-dev");
 
 // Import automation modules
 const { getTempEmail } = require("./src/automation/tempmail");
@@ -76,7 +75,7 @@ function createWindow() {
   });
 
   win.loadURL(
-    isDev
+    !app.isPackaged
       ? "http://localhost:5173"
       : `file://${path.join(__dirname, "dist/index.html")}`,
   );

@@ -10,7 +10,7 @@ function Sidebar({ activePage, setActivePage }) {
       {/* App Branding Header */}
       <div className="p-6 bg-[#F2E2CB] flex justify-center items-center ">
         <img
-          src="/src/assets/side_logo.png"
+          src="./side_logo.png"
           alt="logo"
           className="h-25 w-25 mt-3"
         />

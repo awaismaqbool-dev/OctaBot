@@ -84,7 +84,7 @@ function Dashboard() {
   return (
     <div>
       <div className="flex justify-center ">
-        <img className="h-15 w-auto" src="/src/assets/logo.png" alt="logo" />
+        <img className="h-15 w-auto" src="./logo.png" alt="logo" />
       </div>
       <h1 className="text-center text-2xl font-normal font-unbounded text-[#974E3F] pt-5">
         The System That Works For You

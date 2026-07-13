@@ -1,4 +1,4 @@
-const { chromium } = require("playwright");
+const { chromium } = require("playwright-core");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -20,8 +20,17 @@ async function loginAutomationExercise(
     "--disable-web-security",
   ];
 
+  // Old code - Playwright bundled Chromium
+  // const browser = await chromium.launch({
+  //   headless: !showBrowser,
+  //   args: launchArgs,
+  //   proxy: proxyConfig ? { server: proxyConfig.server } : undefined,
+  // });
+
+  // New code - System Chrome browser use karega (har PC pe installed hota hai)
   const browser = await chromium.launch({
     headless: !showBrowser,
+    channel: 'chrome',
     args: launchArgs,
     proxy: proxyConfig ? { server: proxyConfig.server } : undefined,
   });
